@@ -19,8 +19,7 @@ Aplikasi analisis sentimen berbasis Python untuk menganalisis transkrip konferen
 
 1.  **Clone Repository**
     ```bash
-    git clone https://github.com/username/analisis-sentimen.git
-    cd analisis-sentimen/fomc-vader
+    git clone https://github.com/iqbalmo/fomc-vader.git
     ```
 
 2.  **Install Dependencies**
