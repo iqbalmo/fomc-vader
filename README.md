@@ -1,4 +1,4 @@
-# Analisis Sentimen FOMC VADER 📊🇺🇸
+# Analisis Sentimen FOMC VADER 📊
 
 Aplikasi analisis sentimen berbasis Python untuk menganalisis transkrip konferensi pers **Federal Open Market Committee (FOMC)**. Proyek ini dirancang untuk membantu investor dan peneliti memahami *tonalitas* (Hawkish vs Dovish) dari pidato Ketua The Fed, Jerome Powell.
 
