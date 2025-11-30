@@ -66,8 +66,6 @@ def plot_gauge(opening_compound, qa_compound):
     fig.update_layout(height=400)
     return fig
 
-    return fig
-
 def plot_wordcloud(text):
     """
     Membuat Word Cloud dari teks dengan filter POS Tagging (Hanya Noun & Adjective).
@@ -152,12 +150,14 @@ def plot_wordcloud(text):
     
     return fig
 
-def plot_historical_trend(historical_data):
+def plot_historical_trend(historical_data, current_date=None, current_score=None):
     """
     Membuat Line Chart tren sentimen historis.
     
     Args:
         historical_data (list): List of dict data historis.
+        current_date (date, optional): Tanggal file yang sedang dianalisis.
+        current_score (float, optional): Skor compound file yang sedang dianalisis.
         
     Returns:
         plotly.graph_objects.Figure: Objek grafik Plotly.
@@ -166,13 +166,35 @@ def plot_historical_trend(historical_data):
     scores = [item['compound'] for item in historical_data]
     
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=dates, y=scores, mode='lines+markers', name='Sentiment Score', line=dict(color='firebrick', width=2)))
+    
+    # Garis Tren Historis
+    fig.add_trace(go.Scatter(
+        x=dates, 
+        y=scores, 
+        mode='lines+markers', 
+        name='Historical Trend', 
+        line=dict(color='gray', width=2, dash='dot'),
+        marker=dict(size=6, color='gray')
+    ))
+    
+    # Marker untuk File Saat Ini (Jika ada)
+    if current_date and current_score is not None:
+        fig.add_trace(go.Scatter(
+            x=[current_date],
+            y=[current_score],
+            mode='markers',
+            name='Current File',
+            marker=dict(color='blue', size=15, symbol='star'),
+            text=[f"Current: {current_score:.4f}"],
+            hoverinfo='text+x+y'
+        ))
     
     fig.update_layout(
         title='Tren Sentimen Historis The Fed (2020-2025)',
         xaxis_title='Tanggal Pertemuan',
         yaxis_title='Skor Compound VADER',
-        template='plotly_white'
+        template='plotly_white',
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
     )
     
     return fig
@@ -196,12 +218,111 @@ def plot_topic_sentiment(topic_scores):
         go.Bar(x=topics, y=scores, marker_color=colors)
     ])
     
+    return fig
+
+def plot_sentiment_flow(opening_sentences, qa_sentences):
+    """
+    Membuat Line Chart untuk alur sentimen (Sentiment Flow).
+    
+    Args:
+        opening_sentences (list): List of dict dari get_sentence_scores.
+        qa_sentences (list): List of dict dari get_sentence_scores.
+        
+    Returns:
+        plotly.graph_objects.Figure: Objek grafik Plotly.
+    """
+    import pandas as pd
+    
+    # Prepare DataFrames
+    df_op = pd.DataFrame(opening_sentences)
+    df_qa = pd.DataFrame(qa_sentences)
+    
+    # Add rolling average for smoother lines
+    if not df_op.empty:
+        df_op['rolling'] = df_op['compound'].rolling(window=5, min_periods=1).mean()
+    if not df_qa.empty:
+        df_qa['rolling'] = df_qa['compound'].rolling(window=5, min_periods=1).mean()
+        
+    fig = go.Figure()
+    
+    # Opening Line
+    if not df_op.empty:
+        fig.add_trace(go.Scatter(
+            x=df_op['seq'], 
+            y=df_op['rolling'], 
+            mode='lines', 
+            name='Opening Speech (Trend)',
+            line=dict(color='#1f77b4', width=2)
+        ))
+        fig.add_trace(go.Scatter(
+            x=df_op['seq'], 
+            y=df_op['compound'], 
+            mode='markers', 
+            name='Opening (Raw)',
+            marker=dict(color='#1f77b4', size=4, opacity=0.3),
+            showlegend=False
+        ))
+        
+    # Q&A Line
+    if not df_qa.empty:
+        fig.add_trace(go.Scatter(
+            x=df_qa['seq'], 
+            y=df_qa['rolling'], 
+            mode='lines', 
+            name='Q&A Session (Trend)',
+            line=dict(color='#ff7f0e', width=2)
+        ))
+        fig.add_trace(go.Scatter(
+            x=df_qa['seq'], 
+            y=df_qa['compound'], 
+            mode='markers', 
+            name='Q&A (Raw)',
+            marker=dict(color='#ff7f0e', size=4, opacity=0.3),
+            showlegend=False
+        ))
+        
     fig.update_layout(
-        title='Sentimen Berdasarkan Topik',
-        xaxis_title='Topik',
-        yaxis_title='Skor Sentimen',
+        title='Alur Sentimen (Sentiment Flow)',
+        xaxis_title='Urutan Kalimat',
+        yaxis_title='Skor Sentimen (Rolling Avg)',
         yaxis=dict(range=[-1, 1]),
-        template='plotly_white'
+        template='plotly_white',
+        hovermode="x unified"
     )
     
     return fig
+
+def highlight_text(text, sentiment_lexicon=None):
+    """
+    Menandai kata-kata sentimen dalam teks untuk Streamlit.
+    
+    Args:
+        text (str): Kalimat input.
+        sentiment_lexicon (dict): Dictionary kata dan skornya.
+        
+    Returns:
+        str: Teks dengan format markdown warna.
+    """
+    if sentiment_lexicon is None:
+        return text
+        
+    words = text.split()
+    highlighted_words = []
+    
+    for word in words:
+        # Simple cleaning for matching
+        clean_word = word.lower().strip('.,!?"\'')
+        
+        if clean_word in sentiment_lexicon:
+            score = sentiment_lexicon[clean_word]
+            if score > 0:
+                highlighted_words.append(f":green[{word}]")
+            elif score < 0:
+                highlighted_words.append(f":red[{word}]")
+            else:
+                highlighted_words.append(word)
+        else:
+            highlighted_words.append(word)
+            
+    return " ".join(highlighted_words)
+

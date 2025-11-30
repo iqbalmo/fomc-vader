@@ -1,5 +1,81 @@
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+# Custom Financial Lexicon
+# Kata-kata ini memiliki bobot sentimen khusus dalam konteks ekonomi/The Fed
+FINANCIAL_LEXICON = {
+    'robust': 2.0,
+    'strong': 1.5,
+    'growth': 1.5,
+    'stable': 1.5,
+    'expansion': 1.5,
+    'resilient': 1.5,
+    'optimistic': 1.0,
+    'solid': 1.5,
+    'anchored': 1.0,
+    'recalibration': 0.5,
+    'inflation': -1.5,
+    'hike': -1.0,
+    'turmoil': -2.5,
+    'volatility': -1.5,
+    'recession': -3.0,
+    'weak': -1.5,
+    'slowdown': -1.5,
+    'cooling': -0.5,
+    'cooled': -0.5,
+    'uncertainty': -1.0,
+    'risk': -1.0,
+    'downside': -1.5,
+    'pressure': -1.0,
+    'restrictive': -1.0,
+    'tightening': -0.5,
+    'unemployment': -2.0,
+    'crisis': -3.0,
+    'painful': -2.0,
+    'restrictive': -1.0,
+    'pandemic': -2.0,
+    'confidence': 1.5,
+    'remains': 0.5,
+    'carefully': 0.5,
+    'increases': -1.0,
+    'increase': -1.0,
+    'easing': 1.0,
+    'eased': 1.0,
+    'moderating': 1.0,
+    'bottlenecks': -1.5,
+    'transitory': -0.5,
+    'elevated': -1.5,
+    'soft': 1.0, # Soft landing
+    'hard': -1.5, # Hard landing
+    
+    # Logic Tokens (spaCy Result)
+    'economic_positive': 2.5,
+    'economic_negative': -2.5,
+    
+    # Domain Adaptation: Neutralizing Directional Words
+    # Kata-kata ini sering dianggap negatif oleh VADER default,
+    # tapi dalam konteks The Fed ("lower inflation", "rate cut") sifatnya netral/positif.
+    # Kita ubah jadi 0.0 agar sentimen bergantung pada kata benda (noun) atau konteksnya.
+    'lower': 0.0,
+    'low': 0.0,
+    'cut': 0.0,
+    'drop': 0.0,
+    'decrease': 0.0,
+    'declining': 0.0,
+    
+    # Memastikan indikator negatif tetap negatif
+    'unemployment': -1.5,
+    'inflation': -1.5
+}
+
+# Load spaCy model globally once
+import spacy
+try:
+    NLP = spacy.load("en_core_web_sm")
+except OSError:
+    from spacy.cli import download
+    download("en_core_web_sm")
+    NLP = spacy.load("en_core_web_sm")
+
 def get_vader_score(text):
     """
     Menghitung skor sentimen VADER dengan Custom Lexicon Keuangan.
@@ -12,59 +88,7 @@ def get_vader_score(text):
     """
     analyzer = SentimentIntensityAnalyzer()
     
-    # Custom Financial Lexicon
-    # Kata-kata ini memiliki bobot sentimen khusus dalam konteks ekonomi/The Fed
-    financial_lexicon = {
-        'robust': 2.0,
-        'strong': 1.5,
-        'growth': 1.5,
-        'stable': 1.5,
-        'expansion': 1.5,
-        'resilient': 1.5,
-        'optimistic': 1.0,
-        'solid': 1.5,
-        'anchored': 1.0,
-        'recalibration': 0.5,
-        'inflation': -1.5,
-        'hike': -1.0,
-        'turmoil': -2.5,
-        'volatility': -1.5,
-        'recession': -3.0,
-        'weak': -1.5,
-        'slowdown': -1.5,
-        'cooling': -0.5,
-        'cooled': -0.5,
-        'uncertainty': -1.0,
-        'risk': -1.0,
-        'downside': -1.5,
-        'pressure': -1.0,
-        'restrictive': -1.0,
-        'tightening': -0.5,
-        'unemployment': -2.0,
-        'crisis': -3.0,
-        'painful': -2.0,
-        'restrictive': -1.0,
-        'pandemic': -2.0,
-        'confidence': 1.5,
-        'remains': 0.5,
-        'carefully': 0.5,
-        'increases': -1.0,
-        'increase': -1.0,
-        'easing': 1.0,
-        'eased': 1.0,
-        'moderating': 1.0,
-        'bottlenecks': -1.5,
-        'transitory': -0.5,
-        'elevated': -1.5,
-        'soft': 1.0, # Soft landing
-        'hard': -1.5, # Hard landing
-        
-        # Logic Tokens (spaCy Result)
-        'economic_positive': 2.5,
-        'economic_negative': -2.5
-    }
-    
-    analyzer.lexicon.update(financial_lexicon)
+    analyzer.lexicon.update(FINANCIAL_LEXICON)
     
     # Smart Context Logic (spaCy)
     # Mengubah kalimat berdasarkan logika ekonomi sebelum masuk VADER
@@ -78,17 +102,7 @@ def apply_economic_logic(text):
     Menggunakan Dependency Parsing (spaCy) untuk menerapkan logika ekonomi.
     Contoh: "Inflation falls" -> "Inflation_Good"
     """
-    import spacy
-    
-    # Load model (pastikan sudah didownload via requirements.txt)
-    try:
-        nlp = spacy.load("en_core_web_sm")
-    except OSError:
-        from spacy.cli import download
-        download("en_core_web_sm")
-        nlp = spacy.load("en_core_web_sm")
-        
-    doc = nlp(text)
+    doc = NLP(text)
     
     # Definisi Indikator
     bad_indicators = {'inflation', 'unemployment', 'cpi', 'pce', 'prices', 'price', 'cost', 'risk', 'uncertainty', 'volatility', 'pressure'}
@@ -308,3 +322,91 @@ def extract_key_highlights(opening_text, qa_text, num=3):
         'positive': top_positive,
         'negative': top_negative
     }
+
+def get_sentence_scores(text):
+    """
+    Menghitung skor sentimen untuk setiap kalimat dalam teks.
+    Berguna untuk visualisasi alur sentimen (Sentiment Flow).
+    
+    Args:
+        text (str): Teks input.
+        
+    Returns:
+        list: List of dict [{'text': str, 'compound': float, 'seq': int}, ...]
+    """
+    import nltk
+    from nltk.tokenize import sent_tokenize
+    
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download('punkt')
+        
+    sentences = sent_tokenize(text)
+    results = []
+    
+    for i, sent in enumerate(sentences):
+        if len(sent.split()) < 3: continue # Skip kalimat terlalu pendek
+        score = get_vader_score(sent)
+        results.append({
+            'seq': i + 1,
+            'text': sent,
+            'compound': score['compound']
+        })
+        
+    return results
+
+def analyze_certainty(text):
+    """
+    Menganalisis tingkat kepastian (Certainty Index) berdasarkan penggunaan modal verbs.
+    
+    Args:
+        text (str): Teks input.
+        
+    Returns:
+        dict: {'score': float, 'label': str}
+        Score range: 0.0 (Sangat Tidak Pasti) - 1.0 (Sangat Pasti)
+    """
+    doc = NLP(text.lower())
+    
+    # Modal Verbs Categorization
+    certainty_words = {'will', 'must', 'shall', 'definitely', 'certainly', 'clearly', 'undoubtedly', 'always', 'never'}
+    uncertainty_words = {'may', 'might', 'could', 'possibly', 'probably', 'perhaps', 'unlikely', 'likely', 'seems', 'appears'}
+    
+    certain_count = 0
+    uncertain_count = 0
+    total_words = 0
+    
+    for token in doc:
+        if token.is_alpha:
+            total_words += 1
+            if token.text in certainty_words:
+                certain_count += 1
+            elif token.text in uncertainty_words:
+                uncertain_count += 1
+                
+    if total_words == 0:
+        return {'score': 0.5, 'label': 'Netral'}
+        
+    # Simple Ratio Metric
+    # Semakin banyak uncertain words, score makin rendah.
+    # Base score 0.5. 
+    # Tiap certain word nambah score, tiap uncertain ngurangin.
+    
+    # Normalisasi sederhana
+    score = 0.5 + (certain_count * 0.05) - (uncertain_count * 0.05)
+    score = max(0.0, min(1.0, score)) # Clip between 0 and 1
+    
+    if score > 0.6:
+        label = "Tegas / Pasti"
+    elif score < 0.4:
+        label = "Hati-hati / Tidak Pasti"
+    else:
+        label = "Netral / Terukur"
+        
+    return {
+        'score': score,
+        'label': label,
+        'details': {'certain_count': certain_count, 'uncertain_count': uncertain_count}
+    }
+

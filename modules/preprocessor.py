@@ -30,26 +30,83 @@ def split_transcript(text):
     Returns:
         tuple: (opening_speech, qa_session) atau (None, None) jika separator tidak ditemukan.
     """
-    separators = [
-        "I look forward to your questions",
-        "glad to take your questions",
-        "questions, please"
+    # Regex Patterns yang lebih spesifik dan ketat untuk menghindari false positive
+    # Masalah sebelumnya: "prepared to adjust" dianggap sebagai closing karena ada kata "prepared" ... "questions"
+    # Solusi: Enforce kedekatan kata kerja (phrase-based matching)
+    
+    patterns = [
+        # Pola 1: "I look forward to your questions"
+        r"look\s+forward\s+to\s+(?:taking|answering|your)?\s*questions",
+        
+        # Pola 2: "happy/glad/prepared to take/answer your questions"
+        # HARUS diikuti "to take" atau "to answer" agar tidak match dengan "prepared to adjust"
+        r"(?:glad|happy|prepared)\s+to\s+(?:take|answer)\s+(?:your)?\s*questions",
+        
+        # Pola 3: "questions, please" (Fallback pendek, tapi cukup spesifik di akhir paragraf)
+        r"questions\s*,?\s*please"
     ]
     
-    for sep in separators:
-        if sep in text:
-            parts = text.split(sep, 1)
-            # Bagian pertama adalah opening, bagian kedua adalah Q&A (termasuk separatornya atau tidak? 
-            # Biasanya separator adalah penutup opening atau pembuka Q&A. 
-            # Kita masukkan separator ke bagian opening atau membuangnya. 
-            # Untuk kebersihan, kita bisa membuangnya atau membiarkannya.
-            # Mari kita pisahkan tepat di separator.
-            opening_speech = parts[0].strip()
-            qa_session = sep + parts[1] # Memasukkan separator ke Q&A agar konteks tetap ada, atau bisa dibuang.
-            # Instruksi: "opening_speech (sebelum frasa) dan qa_session (setelah frasa)"
-            # Mari ikuti instruksi ketat: sebelum dan setelah.
-            qa_session = parts[1].strip()
-            
-            return opening_speech, qa_session
+    match = None
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            break # Ambil match pertama yang valid
+    
+    if match:
+        # Split di posisi match
+        split_index = match.start()
+        opening_speech = text[:split_index].strip()
+        qa_session = text[split_index:].strip()
+        return opening_speech, qa_session
+        
+    # Fallback: Cari nama moderator jika kalimat penutup tidak ketemu
+    # Biasanya: <NAME>MICHELLE SMITH</NAME>
+    pattern_moderator = r"<NAME>.*?MICHELLE SMITH.*?</NAME>"
+    match_mod = re.search(pattern_moderator, text, re.IGNORECASE)
+    
+    if match_mod:
+        split_index = match_mod.start()
+        opening_speech = text[:split_index].strip()
+        qa_session = text[split_index:].strip()
+        return opening_speech, qa_session
             
     return None, None
+
+def filter_speaker(text, target_speaker="CHAIR POWELL"):
+    """
+    Memfilter teks Q&A untuk hanya mengambil ucapan dari pembicara tertentu.
+    Menggunakan regex untuk mendeteksi tag <NAME>...</NAME>.
+    
+    Args:
+        text (str): Teks Q&A mentah (masih ada tag <NAME>).
+        target_speaker (str): Nama pembicara yang ingin diambil (case-insensitive).
+        
+    Returns:
+        str: Teks gabungan dari pembicara target.
+    """
+    # Regex penjelasan:
+    # <NAME>(.*?)</NAME> : Menangkap nama pembicara di dalam tag
+    # (.*?)              : Menangkap isi ucapan (non-greedy)
+    # (?=<NAME>|$)       : Lookahead positif, berhenti saat ketemu tag <NAME> berikutnya atau akhir string
+    pattern = r'<NAME>(.*?)</NAME>(.*?)(?=<NAME>|$)'
+    
+    matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
+    
+    filtered_text = []
+    
+    for speaker, content in matches:
+        # Bersihkan nama speaker dari spasi berlebih
+        speaker = speaker.strip().upper()
+        
+        # Cek apakah speaker sesuai target
+        if target_speaker.upper() in speaker:
+            filtered_text.append(content.strip())
+            
+    if not filtered_text:
+        # Fallback jika tidak ada match (mungkin format beda atau tidak ada tag)
+        # Kembalikan teks asli jika tidak ada tag <NAME> ditemukan sama sekali
+        if "<NAME>" not in text:
+            return text
+        return ""
+        
+    return " ".join(filtered_text)
