@@ -46,6 +46,20 @@ FINANCIAL_LEXICON = {
     'elevated': -1.5,
     'soft': 1.0, # Soft landing
     'hard': -1.5, # Hard landing
+    'disinflation': 1.5,
+    'disinflationary': 1.5,
+    'normalization': 1.0,
+    'headwinds': -1.5,
+    'tailwinds': 1.5,
+    'anchored': 1.5,
+    'unanchored': -2.0,
+    'vigilant': -0.5, # Often implies watching for bad things
+    'data-dependent': 0.5, # Neutral/Cautious optimism
+    'restrictive': -1.0,
+    'tight': -1.0,
+    'tightening': -1.0,
+    'balanced': 1.0,
+    'imbalance': -1.5,
     
     # Logic Tokens (spaCy Result)
     'economic_positive': 2.5,
@@ -396,6 +410,51 @@ def analyze_certainty(text):
     # Normalisasi sederhana
     score = 0.5 + (certain_count * 0.05) - (uncertain_count * 0.05)
     score = max(0.0, min(1.0, score)) # Clip between 0 and 1
+    
+    label = "Netral"
+    if score > 0.6: label = "Tegas / Pasti"
+    elif score < 0.4: label = "Hati-hati / Tidak Pasti"
+    
+    return {'score': score, 'label': label}
+
+def generate_smart_conclusion(opening_score, qa_score):
+    """
+    Menghasilkan kesimpulan cerdas berdasarkan perbandingan skor.
+    Threshold: 0.05
+    """
+    diff = qa_score - opening_score
+    threshold = 0.05
+    
+    if diff > threshold:
+        status = "Lebih Optimis"
+        color = "green"
+        narrative = (
+            f"Sesi Tanya Jawab menunjukkan peningkatan sentimen positif sebesar {diff:.4f} dibandingkan Pidato Pembuka. "
+            "Ini mengindikasikan bahwa Ketua The Fed memberikan klarifikasi yang menenangkan pasar atau "
+            "menyampaikan pandangan yang lebih konstruktif saat merespons pertanyaan wartawan."
+        )
+    elif diff < -threshold:
+        status = "Lebih Pesimis"
+        color = "red"
+        narrative = (
+            f"Sesi Tanya Jawab menunjukkan penurunan sentimen sebesar {abs(diff):.4f} dibandingkan Pidato Pembuka. "
+            "Hal ini menandakan adanya nada kehati-hatian atau peringatan risiko yang lebih kuat saat sesi diskusi, "
+            "yang mungkin tidak terlalu ditekankan dalam naskah pidato resmi."
+        )
+    else:
+        status = "Netral / Konsisten"
+        color = "blue"
+        narrative = (
+            f"Tonalitas sentimen relatif konsisten antara Pidato Pembuka dan Sesi Tanya Jawab (selisih {diff:.4f} < 0.05). "
+            "Ketua The Fed mempertahankan pesan yang stabil dan terukur, tanpa memberikan sinyal kejutan yang signifikan "
+            "selama sesi diskusi."
+        )
+        
+    return {
+        'status': status,
+        'color': color,
+        'narrative': narrative
+    }
     
     if score > 0.6:
         label = "Tegas / Pasti"

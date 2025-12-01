@@ -287,7 +287,21 @@ def plot_sentiment_flow(opening_sentences, qa_sentences):
         yaxis_title='Skor Sentimen (Rolling Avg)',
         yaxis=dict(range=[-1, 1]),
         template='plotly_white',
-        hovermode="x unified"
+        hovermode="x unified",
+        shapes=[
+            # Green Zone (Optimistic)
+            dict(
+                type="rect", xref="paper", yref="y",
+                x0=0, y0=0.05, x1=1, y1=1,
+                fillcolor="green", opacity=0.05, layer="below", line_width=0,
+            ),
+            # Red Zone (Pessimistic)
+            dict(
+                type="rect", xref="paper", yref="y",
+                x0=0, y0=-1, x1=1, y1=-0.05,
+                fillcolor="red", opacity=0.05, layer="below", line_width=0,
+            )
+        ]
     )
     
     return fig
