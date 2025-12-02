@@ -340,3 +340,54 @@ def highlight_text(text, sentiment_lexicon=None):
             
     return " ".join(highlighted_words)
 
+
+def plot_keyword_trend(keyword_data, keyword):
+    """
+    Membuat Scatter Plot untuk tren sentimen kata kunci tertentu.
+    
+    Args:
+        keyword_data (list): List of dict [{'seq': int, 'compound': float, 'text': str}, ...]
+        keyword (str): Kata kunci yang dianalisis.
+        
+    Returns:
+        plotly.graph_objects.Figure: Objek grafik Plotly.
+    """
+    if not keyword_data:
+        return go.Figure()
+        
+    seqs = [item['seq'] for item in keyword_data]
+    scores = [item['compound'] for item in keyword_data]
+    texts = [item['text'] for item in keyword_data]
+    
+    # Determine colors based on score
+    colors = ['green' if s > 0.05 else 'red' if s < -0.05 else 'gray' for s in scores]
+    
+    fig = go.Figure()
+    
+    # Add Scatter trace
+    fig.add_trace(go.Scatter(
+        x=seqs,
+        y=scores,
+        mode='markers',
+        name=f'"{keyword}" Context',
+        marker=dict(size=10, color=colors, line=dict(width=1, color='black')),
+        text=texts,
+        hoverinfo='text+y'
+    ))
+    
+    # Add zero line
+    fig.add_shape(type="line",
+        x0=min(seqs)-1, y0=0, x1=max(seqs)+1, y1=0,
+        line=dict(color="black", width=1, dash="dash"),
+    )
+    
+    fig.update_layout(
+        title=f'Distribusi Sentimen Konteks Kata: "{keyword}"',
+        xaxis_title='Urutan Kalimat dalam Transkrip',
+        yaxis_title='Skor Sentimen',
+        yaxis=dict(range=[-1.1, 1.1]),
+        template='plotly_white',
+        showlegend=False
+    )
+    
+    return fig

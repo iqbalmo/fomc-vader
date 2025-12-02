@@ -469,3 +469,97 @@ def generate_smart_conclusion(opening_score, qa_score):
         'details': {'certain_count': certain_count, 'uncertain_count': uncertain_count}
     }
 
+
+
+def get_top_keywords(text, n=20):
+    """
+    Ekstrak kata-kata kunci paling sering muncul (selain stopwords).
+    Menggunakan logika yang sama dengan WordCloud (POS Tagging: Noun & Adj).
+    """
+    from collections import Counter
+    import nltk
+    from nltk.corpus import stopwords
+    from nltk.tokenize import word_tokenize
+    from nltk.tag import pos_tag
+    
+    # Download NLTK resources if not present
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download('punkt')
+    try:
+        nltk.data.find('taggers/averaged_perceptron_tagger')
+    except LookupError:
+        nltk.download('averaged_perceptron_tagger')
+    try:
+        nltk.data.find('corpora/stopwords')
+    except LookupError:
+        nltk.download('stopwords')
+
+    # 1. Tokenisasi & POS Tagging
+    tokens = word_tokenize(text.lower())
+    tagged_tokens = pos_tag(tokens)
+    
+    # 2. Whitelist Filter: Hanya ambil Noun (NN*) dan Adjective (JJ*)
+    allowed_tags = {'NN', 'NNS', 'JJ', 'JJR', 'JJS'}
+    
+    # 3. Custom Blacklist (Sama dengan visualizer.py)
+    custom_stopwords = set([
+        'percent', 'year', 'month', 'today', 'term', 'point', 'number', 'million', 'billion',
+        'thing', 'way', 'part', 'lot', 'bit', 'side', 'type', 'kind', 'sort', 'sense',
+        'question', 'answer', 'mr', 'ms', 'chair', 'powell', 'chairman', 'operator',
+        'meeting', 'committee', 'reserve', 'federal', 'fed', 'bank', 'system',
+        'program', 'statement', 'guidance', 'tool', 'support', 'policy', 'rate', 
+        'time', 'period', 'level', 'range', 'goal', 'objective', 'mandate',
+        'michelle', 'smith', 'hi', 'hello', 'thanks', 'thank', 'please',
+        'quarter', 'half', 'basis', 'pace', 'outlook', 'projection', 'view',
+        'participant', 'member', 'colleague', 'staff', 'governor', 'president',
+        'morning', 'afternoon', 'evening', 'everyone', 'everybody', 'people',
+        'think', 'going', 'see', 'say', 'know', 'look', 'come', 'make', 'take', 'get' # Common verbs often tagged as nouns in some contexts
+    ])
+    
+    # Gabungkan dengan stopwords bawaan NLTK
+    final_stopwords = set(stopwords.words('english')).union(custom_stopwords)
+    
+    # Important Economic Terms to KEEP (Remove from stopwords if present)
+    # Meskipun ada di custom_stopwords visualizer (misal 'rate'), user mungkin ingin melihatnya di sini.
+    # Tapi user minta "sesuaikan dengan filter wordcloud", jadi saya akan ikuti visualizer.py dulu.
+    # Namun, 'inflation', 'jobs', 'growth' tidak ada di blacklist visualizer, jadi aman.
+    
+    # Filter token
+    meaningful_words = []
+    for word, tag in tagged_tokens:
+        if tag in allowed_tags and word.isalpha() and word not in final_stopwords and len(word) > 2:
+            meaningful_words.append(word)
+    
+    # Count
+    counter = Counter(meaningful_words)
+    return [word for word, count in counter.most_common(n)]
+
+def analyze_keyword_context(text, keyword):
+    """
+    Menganalisis sentimen kalimat-kalimat yang mengandung keyword tertentu.
+    """
+    import nltk
+    from nltk.tokenize import sent_tokenize
+    
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download('punkt')
+        
+    sentences = sent_tokenize(text)
+    results = []
+    
+    keyword = keyword.lower()
+    
+    for i, sent in enumerate(sentences):
+        if keyword in sent.lower():
+            score = get_vader_score(sent)
+            results.append({
+                'seq': i + 1,
+                'text': sent,
+                'compound': score['compound']
+            })
+            
+    return results

@@ -176,6 +176,57 @@ def main():
                     fig_wc = visualizer.plot_wordcloud(cleaned_text)
                     st.pyplot(fig_wc)
                     
+                    # --- NEW FEATURE: Keyword Sentiment Context ---
+                    st.divider()
+                    st.subheader("🔍 Analisis Konteks Kata Kunci")
+                    
+                    # Get top keywords
+                    top_keywords = analyzer.get_top_keywords(cleaned_text, n=30)
+                    
+                    if top_keywords:
+                        selected_keyword = st.selectbox(
+                            "Pilih kata kunci untuk melihat konteks sentimennya:",
+                            options=top_keywords,
+                            index=0
+                        )
+                        
+                        if selected_keyword:
+                            # Analyze context
+                            keyword_context = analyzer.analyze_keyword_context(cleaned_text, selected_keyword)
+                            
+                            if keyword_context:
+                                # Metrics
+                                avg_score = sum(item['compound'] for item in keyword_context) / len(keyword_context)
+                                count = len(keyword_context)
+                                
+                                k_col1, k_col2 = st.columns(2)
+                                k_col1.metric("Frekuensi Kemunculan", f"{count} kali")
+                                k_col2.metric("Rata-rata Sentimen", f"{avg_score:.4f}", analyzer.get_sentiment_label(avg_score))
+                                
+                                # Plot Trend
+                                st.plotly_chart(visualizer.plot_keyword_trend(keyword_context, selected_keyword), use_container_width=True)
+                                
+                                # Show Sentences
+                                st.markdown(f"**Daftar Kalimat yang Mengandung '{selected_keyword}':**")
+                                for item in keyword_context:
+                                    # Color code based on sentiment
+                                    color = "gray"
+                                    if item['compound'] > 0.05: color = "green"
+                                    elif item['compound'] < -0.05: color = "red"
+                                    
+                                    # Highlight keyword in text
+                                    highlighted_text = item['text'].replace(selected_keyword, f"**{selected_keyword}**")
+                                    highlighted_text = highlighted_text.replace(selected_keyword.title(), f"**{selected_keyword.title()}**")
+                                    
+                                    st.markdown(f":{color}-background[Seq {item['seq']}] {highlighted_text} (Score: {item['compound']:.2f})")
+                            else:
+                                st.info("Kata kunci tidak ditemukan dalam konteks kalimat penuh.")
+                    else:
+                        st.warning("Tidak cukup data untuk mengekstrak kata kunci.")
+                    
+                    st.divider()
+                    # --- END NEW FEATURE ---
+
                     col1, col2 = st.columns(2)
                     with col1:
                         st.subheader("Pidato Pembuka")
