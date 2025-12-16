@@ -43,7 +43,7 @@ def convert_df_to_csv(df):
 
 # --- Main Application ---
 def main():
-    st.title("Analisis Sentimen Perbandingan Tonalitas Pidato Ketua The Fed")
+    st.title("Evaluasi Metode Domain-Adapted VADER untuk Analisis Dinamika Sentimen pada Konferensi Pers FOMC")
     st.markdown("""
     Aplikasi ini menganalisis sentimen dari transkrip pidato Ketua The Fed (Jerome Powell) 
     menggunakan metode **VADER (Valence Aware Dictionary and sEntiment Reasoner)**.
@@ -61,7 +61,7 @@ def main():
     load_history = st.sidebar.checkbox("Tampilkan Data Historis", value=True)
     
     # --- Main Tabs ---
-    tab_analysis, tab_history = st.tabs(["📊 Analisis File Upload", "📈 Analisis Tren Historis"])
+    tab_analysis, tab_history, tab_validation = st.tabs(["📊 Analisis File Upload", "📈 Analisis Tren Historis", "🧪 Validasi Ilmiah"])
     
     # --- Tab 1: Analisis File ---
     with tab_analysis:
@@ -318,11 +318,14 @@ def main():
                 with tab4:
                     st.plotly_chart(visualizer.plot_sentiment_flow(opening_sentences, qa_sentences), use_container_width=True)
                 with tab5:
-                    st.caption("Menggunakan Unsupervised Learning (K-Means) untuk menemukan topik tersembunyi secara otomatis.")
-                    with st.spinner("Melakukan Clustering..."):
-                        # Perform Clustering on cleaning text (full)
-                        cluster_results = analyzer.perform_topic_clustering(cleaned_text, n_clusters=5)
+                    st.caption("Menggunakan Unsupervised Learning (K-Means) dengan Optimasi Silhouette Score (Auto-K).")
+                    with st.spinner("Melakukan Clustering & Optimasi..."):
+                        # Perform Optimized Clustering
+                        # Returns tuple: (results, optimal_k, silhouette_score)
+                        cluster_results, best_k, best_score = analyzer.perform_optimized_clustering(cleaned_text)
+                        
                         if cluster_results:
+                            st.success(f"Optimal Clusters: **{best_k}** (Silhouette Score: per {best_score:.4f})")
                             st.plotly_chart(visualizer.plot_cluster_sentiment(cluster_results), use_container_width=True)
                             
                             # Show details
@@ -398,6 +401,82 @@ def main():
                     st.warning("Tidak ada data historis ditemukan di folder 'fomc-transcript'.")
         else:
             st.write("Centang 'Tampilkan Data Historis' di sidebar untuk melihat tren.")
+
+    # --- Tab 3: Scientific Validation ---
+    with tab_validation:
+        st.header("🧪 Validasi Ilmiah (Experimental)")
+        st.markdown("""
+        Validasi validitas skor sentimen VADER Anda dengan membandingkannya melawan model **State-of-the-Art (SOTA)** 
+        berbasis Deep Learning khusus finansial: **FinBERT (ProsusAI)**.
+        """)
+        
+        st.info("⚠️ **Catatan:** Proses ini membutuhkan download model (~440MB) pada penggunaan pertama dan mungkin memerlukan waktu.")
+        
+        if uploaded_file is not None and 'cleaned_text' in locals():
+            if st.button("🚀 Jalankan Validasi Silang (Cross-Validation)"):
+                try:
+                    with st.spinner("Memuat Model FinBERT & Melakukan Validasi... (Harap tunggu)"):
+                        # Lazy import to avoid loading heavy model at startup
+                        from modules.validator import ScientificValidator
+                        from nltk.tokenize import sent_tokenize
+                        
+                        # Initialize Validator
+                        validator = ScientificValidator()
+                        
+                        # Prepare data for validation
+                        # We need list of sentences and their VADER scores
+                        sentences = sent_tokenize(cleaned_text)
+                        
+                        # Filter short sentences
+                        valid_sents = []
+                        vader_scores = []
+                        
+                        for s in sentences:
+                            if len(s.split()) > 5:
+                                valid_sents.append(s)
+                                vader_scores.append(analyzer.get_vader_score(s)['compound'])
+                                
+                        if not valid_sents:
+                            st.warning("Data kalimat valid tidak cukup.")
+                        else:
+                            # Run Validation
+                            # Sample size 50 for balance between speed and accuracy
+                            val_results = validator.validate_against_sota(valid_sents, vader_scores, sample_size=50)
+                            
+                            st.divider()
+                            st.subheader("Hasil Validasi Statistik")
+                            
+                            col_v1, col_v2 = st.columns(2)
+                            with col_v1:
+                                st.metric(
+                                    "Korelasi Pearson (r)", 
+                                    f"{val_results['correlation']:.4f}",
+                                    help="Mendekati 1.0 berarti VADER Anda sangat sejalan dengan FinBERT."
+                                )
+                            with col_v2:
+                                st.metric(
+                                    "P-Value", 
+                                    f"{val_results['p_value']:.4f}", 
+                                    "Signifikan" if val_results['p_value'] < 0.05 else "Tidak Signifikan",
+                                    delta_color="normal" if val_results['p_value'] < 0.05 else "off"
+                                )
+                                
+                            # Scatter Plot
+                            st.plotly_chart(validator.plot_validation_scatter(val_results), use_container_width=True)
+                            
+                            # Interpretation
+                            if val_results['correlation'] > 0.5:
+                                st.success("✅ **Validasi Sukses:** Metode VADER modifikasi Anda menunjukkan hasil yang konsisten dengan FinBERT (SOTA).")
+                            elif val_results['correlation'] > 0.3:
+                                st.info("ℹ️ **Validasi Moderat:** Ada korelasi positif, namun terdapat beberapa perbedaan interpretasi antara VADER dan FinBERT.")
+                            else:
+                                st.warning("⚠️ **Validasi Lemah:** Hasil VADER cukup berbeda dengan FinBERT. Evaluasi kembali lexicon Anda.")
+                            
+                except Exception as e:
+                    st.error(f"Terjadi kesalahan saat validasi: {e}")
+                    # st.exception(e) # Uncomment for debug
+        else:
+            st.warning("Silakan upload transkrip terlebih dahulu di sidebar.")
 
 if __name__ == "__main__":
     main()

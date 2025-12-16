@@ -11,3 +11,5 @@ xhtml2pdf
 scipy
 yfinance
 scikit-learn
+transformers
+torch

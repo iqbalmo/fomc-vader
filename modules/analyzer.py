@@ -1,6 +1,15 @@
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from scipy import stats
 import numpy as np
+import os
+import re
+from datetime import datetime, timedelta
+import yfinance as yf
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+import nltk
+from nltk.tokenize import sent_tokenize
 
 # Custom Financial Lexicon
 # Kata-kata ini memiliki bobot sentimen khusus dalam konteks ekonomi/The Fed
@@ -293,11 +302,6 @@ def analyze_historical_data(directory):
     Returns:
         list: List of dict [{'date': date, 'compound': score, 'market_change': float}, ...]
     """
-    import os
-    import re
-    from datetime import datetime, timedelta
-    import yfinance as yf
-    
     historical_data = []
     files = [f for f in os.listdir(directory) if f.endswith('.txt')]
     
@@ -354,9 +358,6 @@ def calculate_market_correlation(historical_data):
     """
     Menghitung korelasi Pearson antara Sentimen dan Perubahan Pasar.
     """
-    from scipy import stats
-    import numpy as np
-    
     # Filter data valid (yang punya market_change)
     valid_data = [d for d in historical_data if d['market_change'] is not None]
     
@@ -739,24 +740,32 @@ def perform_statistical_test(opening_sentences, qa_sentences):
         'narrative': narrative
     }
 
+    return {
+        't_stat': t_stat,
+        'p_value': p_value,
+        'is_significant': is_significant,
+        'narrative': narrative
+    }
+
 def perform_topic_clustering(text, n_clusters=5):
     """
-    Melakukan Unsupervised Learning (K-Means) untuk mengelompokkan kalimat
-    berdasarkan topik secara otomatis.
+    Wrapper legacy untuk backward compatibility (jika ada pemanggil lama).
+    Menggunakan optimized clustering secara internal.
+    """
+    results, _, _ = perform_optimized_clustering(text)
+    return results
+
+def perform_optimized_clustering(text):
+    """
+    Melakukan Unsupervised Learning (K-Means) dengan Optimasi Silhouette Score
+    untuk menentukan jumlah cluster terbaik secara otomatis (Auto-K).
     
     Args:
         text (str): Teks lengkap (Opening + Q&A).
-        n_clusters (int): Jumlah cluster yang diinginkan.
         
     Returns:
-        list: List of dict [{'cluster_id': int, 'label': str, 'sentences': list, 'avg_sentiment': float}]
+        tuple: (cluster_results, optimal_n, best_silhouette)
     """
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.cluster import KMeans
-    import nltk
-    from nltk.tokenize import sent_tokenize
-    import numpy as np
-    
     try:
         nltk.data.find('tokenizers/punkt')
     except LookupError:
@@ -764,44 +773,68 @@ def perform_topic_clustering(text, n_clusters=5):
         
     # 1. Split Sentences
     sentences = sent_tokenize(text)
-    # Filter short sentences
+    # Filter short sentences (min words > 5) to ensure meaningful clustering
     valid_sentences = [s for s in sentences if len(s.split()) > 5]
     
-    if len(valid_sentences) < n_clusters * 2:
-        return [] # Not enough data
+    # Minimum data requirement: at least 15 sentences to try clustering up to 5-8 groups
+    if len(valid_sentences) < 15:
+        return [], 0, 0.0
         
     # 2. Vectorization (TF-IDF)
-    # Gunakan stop_words english dan max_df untuk membuang kata umum
     vectorizer = TfidfVectorizer(stop_words='english', max_df=0.8, min_df=2)
     try:
         tfidf_matrix = vectorizer.fit_transform(valid_sentences)
     except ValueError:
-        return [] # Vocabulary empty?
+        return [], 0, 0.0
         
-    # 3. K-Means Clustering
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    kmeans.fit(tfidf_matrix)
+    # 3. Find Optimal K (Silhouette Score)
+    # Range K: 2 to 8 (or less if data is small)
+    max_k = min(8, len(valid_sentences) // 2)
+    best_k = 2
+    best_score = -1.0
     
-    # 4. Extract Top Terms per Cluster & Calculate Sentiment
+    # Needs at least 2 samples for silhouette
+    if tfidf_matrix.shape[0] < 2:
+         return [], 0, 0.0
+
+    print("Optimizing Clusters (Silhouette Score)...")
+    
+    for k in range(2, max_k + 1):
+        try:
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(tfidf_matrix)
+            score = silhouette_score(tfidf_matrix, labels)
+            
+            if score > best_score:
+                best_score = score
+                best_k = k
+        except Exception as e:
+            print(f"Error at k={k}: {e}")
+            continue
+            
+    print(f"Optimal Clusters: {best_k} (Silhouette: {best_score:.4f})")
+    
+    # 4. Final Clustering with Best K
+    final_kmeans = KMeans(n_clusters=best_k, random_state=42, n_init=10)
+    final_kmeans.fit(tfidf_matrix)
+    
+    # 5. Extract Results
     feature_names = vectorizer.get_feature_names_out()
     cluster_results = []
     
-    for i in range(n_clusters):
-        # Get sentences in this cluster
-        # Find indices where label == i
-        indices = np.where(kmeans.labels_ == i)[0]
+    for i in range(best_k):
+        indices = np.where(final_kmeans.labels_ == i)[0]
         cluster_sentences = [valid_sentences[idx] for idx in indices]
         
         # Calculate Average Sentiment
         sentiment_scores = [get_vader_score(s)['compound'] for s in cluster_sentences]
         avg_score = np.mean(sentiment_scores) if sentiment_scores else 0.0
         
-        # Get Top Terms individually from centroid
-        centroid = kmeans.cluster_centers_[i]
+        # Get Top Terms
+        centroid = final_kmeans.cluster_centers_[i]
         top_indices = centroid.argsort()[-3:][::-1] # Top 3
         top_terms = [feature_names[ind] for ind in top_indices]
         
-        # Label: Capitalize terms
         label = ", ".join([t.title() for t in top_terms])
         
         cluster_results.append({
@@ -809,10 +842,12 @@ def perform_topic_clustering(text, n_clusters=5):
             'label': label,
             'count': len(cluster_sentences),
             'avg_sentiment': avg_score,
-            'top_terms': top_terms
+            'top_terms': top_terms,
+            'optimal_n': best_k,
+            'silhouette_score': best_score
         })
         
-    # Sort results by avg_sentiment for better visualization
+    # Sort by avg_sentiment
     cluster_results.sort(key=lambda x: x['avg_sentiment'], reverse=True)
         
-    return cluster_results
+    return cluster_results, best_k, best_score

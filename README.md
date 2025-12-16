@@ -1,4 +1,4 @@
-# Analysis of Sentiment Dynamics and Market Response in FOMC Press Conferences Using Enhanced VADER Method
+# Evaluasi Metode Domain-Adapted VADER untuk Analisis Dinamika Sentimen pada Konferensi Pers FOMC
 
 A Python-based sentiment analysis tool designed to analyze press conference transcripts from the **Federal Open Market Committee (FOMC)**. This project aims to assist investors and researchers in understanding the *tonality* (Hawkish vs. Dovish) of Federal Reserve Chair Jerome Powell's speeches and correlating them with market movements (S&P 500).
 
