@@ -391,3 +391,97 @@ def plot_keyword_trend(keyword_data, keyword):
     )
     
     return fig
+
+def plot_market_correlation(historical_data, correlation_text):
+    """
+    Membuat Scatter Plot hubungan Sentimen vs Market Change.
+    """
+    import plotly.graph_objects as go
+    
+    # Filter valid data
+    valid_data = [d for d in historical_data if d.get('market_change') is not None]
+    
+    sentiments = [d['compound'] for d in valid_data]
+    market_changes = [d['market_change'] for d in valid_data]
+    texts = [f"{d['date'].strftime('%Y-%m-%d')}<br>File: {d['filename']}" for d in valid_data]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=sentiments,
+        y=market_changes,
+        mode='markers',
+        text=texts,
+        marker=dict(
+            size=12,
+            color=market_changes,
+            colorscale='RdBu',
+            showscale=True,
+            line=dict(width=1, color='black')
+        ),
+        name='Data Point'
+    ))
+    
+    fig.update_layout(
+        title=f"Korelasi Sentimen vs Pasar (S&P 500)<br><sub>{correlation_text}</sub>",
+        xaxis_title="Skor Sentimen (Compound)",
+        yaxis_title="% Perubahan S&P 500 (Open to Close)",
+        template="plotly_white",
+        height=500,
+        shapes=[
+            dict(
+                type="line", x0=0, y0=-5, x1=0, y1=5,
+                line=dict(color="gray", dash="dot")
+            ),
+            dict(
+                type="line", x0=-1, y0=0, x1=1, y1=0,
+                line=dict(color="gray", dash="dot")
+            )
+        ]
+    )
+    
+    return fig
+
+def plot_cluster_sentiment(cluster_results):
+    """
+    Membuat Bar Chart untuk sentimen per cluster AI.
+    """
+    import plotly.graph_objects as go
+    
+    if not cluster_results:
+        return go.Figure()
+        
+    labels = [item['label'] for item in cluster_results]
+    scores = [item['avg_sentiment'] for item in cluster_results]
+    counts = [item['count'] for item in cluster_results]
+    
+    # Hover text
+    hover_texts = [f"Topic: {l}<br>Count: {c} sentences<br>Avg Score: {s:.4f}" for l, c, s in zip(labels, counts, scores)]
+    
+    # Color
+    colors = ['green' if s > 0 else 'red' for s in scores]
+    
+    fig = go.Figure(data=[
+        go.Bar(
+            x=scores,
+            y=labels,
+            orientation='h',
+            marker_color=colors,
+            text=scores,
+            texttemplate='%{text:.2f}',
+            textposition='auto',
+            hovertext=hover_texts,
+            hoverinfo='text'
+        )
+    ])
+    
+    fig.update_layout(
+        title="AI Topic Discovery: Sentimen berdasarkan Cluster Topik",
+        xaxis_title="Rata-rata Skor Sentimen",
+        yaxis_title="Top Terms (Topic Label)",
+        yaxis=dict(autorange="reversed"), # Top sorting
+        template='plotly_white',
+        height=400
+    )
+    
+    return fig

@@ -256,6 +256,21 @@ def main():
                     diff = qa_scores['compound'] - opening_scores['compound']
                     st.metric("Selisih (Q&A - Opening)", f"{diff:.4f}", "Lebih Positif" if diff > 0 else "Lebih Negatif")
                     
+                # Uji Validitas Statistik (T-Test)
+                st.caption("---")
+                stat_results = analyzer.perform_statistical_test(opening_sentences, qa_sentences)
+                
+                col_stat1, col_stat2 = st.columns([1, 2])
+                with col_stat1:
+                    st.metric(
+                        "P-Value (Uji T)", 
+                        f"{stat_results['p_value']:.4f}",
+                        "Signifikan (< 0.05)" if stat_results['is_significant'] else "Tidak Signifikan",
+                        delta_color="normal" if stat_results['is_significant'] else "off"
+                    )
+                with col_stat2:
+                    st.info(f"**Interpretasi Statistik:** {stat_results['narrative']}")
+
                 # Certainty Index
                 st.caption("---")
                 col_c1, col_c2 = st.columns(2)
@@ -292,7 +307,7 @@ def main():
                 # Visualisasi
                 st.divider()
                 st.subheader("Visualisasi Perbandingan")
-                tab1, tab2, tab3, tab4 = st.tabs(["Bar Chart", "Gauge Chart", "Sentimen per Topik", "Alur Sentimen"])
+                tab1, tab2, tab3, tab4, tab5 = st.tabs(["Bar Chart", "Gauge Chart", "Sentimen per Topik", "Alur Sentimen", "🤖 AI Topic Discovery"])
                 
                 with tab1:
                     st.plotly_chart(visualizer.plot_comparison(opening_scores, qa_scores), use_container_width=True)
@@ -302,6 +317,20 @@ def main():
                     st.plotly_chart(visualizer.plot_topic_sentiment(topic_scores), use_container_width=True)
                 with tab4:
                     st.plotly_chart(visualizer.plot_sentiment_flow(opening_sentences, qa_sentences), use_container_width=True)
+                with tab5:
+                    st.caption("Menggunakan Unsupervised Learning (K-Means) untuk menemukan topik tersembunyi secara otomatis.")
+                    with st.spinner("Melakukan Clustering..."):
+                        # Perform Clustering on cleaning text (full)
+                        cluster_results = analyzer.perform_topic_clustering(cleaned_text, n_clusters=5)
+                        if cluster_results:
+                            st.plotly_chart(visualizer.plot_cluster_sentiment(cluster_results), use_container_width=True)
+                            
+                            # Show details
+                            with st.expander("Lihat Detail Cluster"):
+                                for c in cluster_results:
+                                    st.markdown(f"**Cluster {c['cluster_id']+1}:** {c['label']} (Avg Score: {c['avg_sentiment']:.4f})")
+                        else:
+                            st.warning("Data tidak cukup untuk melakukan clustering (butuh lebih banyak kalimat panjang).")
                     
                 # Interpretasi
                 st.divider()
@@ -344,8 +373,27 @@ def main():
                             except ValueError:
                                 pass
                     
+                    # 1. Historical Trend Plot
                     st.plotly_chart(visualizer.plot_historical_trend(historical_data, current_date, current_score), use_container_width=True)
                     st.success(f"Menampilkan data dari {len(historical_data)} pertemuan FOMC.")
+                    
+                    # 2. Market Correlation Analysis (S&P 500)
+                    st.divider()
+                    st.subheader("🔗 Korelasi dengan S&P 500")
+                    st.caption("Menganalisis hubungan antara Sentimen Pidato dengan Perubahan Pasar (% Change Close-Open) pada hari yang sama (atau hari perdagangan berikutnya).")
+                    
+                    # Calculate Correlation
+                    corr_result = analyzer.calculate_market_correlation(historical_data)
+                    
+                    col_corr1, col_corr2 = st.columns([1, 2])
+                    with col_corr1:
+                        st.metric("Korelasi Pearson", f"{corr_result['correlation']:.4f}", f"P-Value: {corr_result['p_value']:.4f}")
+                    with col_corr2:
+                        st.info(f"{corr_result['text']}")
+                        
+                    # Scatter Plot
+                    st.plotly_chart(visualizer.plot_market_correlation(historical_data, corr_result['text']), use_container_width=True)
+                    
                 else:
                     st.warning("Tidak ada data historis ditemukan di folder 'fomc-transcript'.")
         else:

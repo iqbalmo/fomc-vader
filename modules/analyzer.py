@@ -1,4 +1,6 @@
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from scipy import stats
+import numpy as np
 
 # Custom Financial Lexicon
 # Kata-kata ini memiliki bobot sentimen khusus dalam konteks ekonomi/The Fed
@@ -81,6 +83,23 @@ FINANCIAL_LEXICON = {
     'inflation': -1.5
 }
 
+# Hedge Words (Fed Speak) Damping Factors
+# Kata-kata ini menandakan ketidakpastian atau "Fed Speak" yang halus.
+# Jika ada kata ini, kita kurangi intesitas sentimen (damping factor).
+HEDGE_MODIFIERS = {
+    'likely': 0.8,
+    'possibly': 0.7,
+    'suggests': 0.8,
+    'might': 0.7,
+    'could': 0.7,
+    'appears': 0.8,
+    'seems': 0.8,
+    'somewhat': 0.8,
+    'relatively': 0.9,
+    'essentially': 0.9,
+    'may': 0.8,
+}
+
 # Load spaCy model globally once
 import spacy
 try:
@@ -92,7 +111,8 @@ except OSError:
 
 def get_vader_score(text):
     """
-    Menghitung skor sentimen VADER dengan Custom Lexicon Keuangan.
+    Menghitung skor sentimen VADER dengan Custom Lexicon Keuangan
+    dan Logika Damping untuk Hedge Words (Fed Speak).
     
     Args:
         text (str): Teks input.
@@ -104,11 +124,32 @@ def get_vader_score(text):
     
     analyzer.lexicon.update(FINANCIAL_LEXICON)
     
-    # Smart Context Logic (spaCy)
+    # 1. Smart Context Logic (spaCy)
     # Mengubah kalimat berdasarkan logika ekonomi sebelum masuk VADER
-    text = apply_economic_logic(text)
+    processed_text = apply_economic_logic(text)
     
-    scores = analyzer.polarity_scores(text)
+    # 2. Basic VADER Score
+    scores = analyzer.polarity_scores(processed_text)
+    
+    # 3. Hedge Words Damping Logic
+    # Cek apakah ada hedge words di teks ASLI (sebelum diproses logic ekonomi jika perlu, 
+    # tapi processed_text isinya token yang digabung, jadi cek raw text lebih aman untuk keyword matching)
+    
+    damping_factor = 1.0
+    text_lower = text.lower()
+    
+    words = text_lower.split() # Simple split for check
+    # Note: Ini simple check, ideally tokenized. Tapi cukup untuk keyword 'might', 'could' dll.
+    
+    for word, factor in HEDGE_MODIFIERS.items():
+        if word in words:
+            damping_factor *= factor
+            
+    # Apply damping to compound score only (biasakan intensitas berkurang)
+    # Jika damping_factor < 1.0, skor mendekati 0.
+    if damping_factor < 1.0:
+        scores['compound'] = scores['compound'] * damping_factor
+        
     return scores
 
 def apply_economic_logic(text):
@@ -244,20 +285,28 @@ def analyze_topic_sentiment(text):
 
 def analyze_historical_data(directory):
     """
-    Menganalisis tren sentimen historis dari file transkrip.
+    Menganalisis tren sentimen historis dan menghubungkannya dengan data pasar (S&P 500).
     
     Args:
         directory (str): Path direktori transkrip.
         
     Returns:
-        list: List of dict [{'date': date, 'compound': score}, ...]
+        list: List of dict [{'date': date, 'compound': score, 'market_change': float}, ...]
     """
     import os
     import re
-    from datetime import datetime
+    from datetime import datetime, timedelta
+    import yfinance as yf
     
     historical_data = []
     files = [f for f in os.listdir(directory) if f.endswith('.txt')]
+    
+    # Pre-fetch market data optimization?
+    # Untuk simplicitas, kita fetch per tanggal tapi dengan range kecil.
+    # Agar lebih cepat, kita bisa fetch all history sekali saja, tapi itu butuh range min-max date.
+    # Kita pakai pendekatan per file dulu, jika lambat bisa dioptimasi nanti.
+    
+    print(f"Processing {len(files)} historical files...")
     
     for filename in files:
         # Extract date from filename (e.g., FOMCpresconf20200916.txt)
@@ -270,13 +319,28 @@ def analyze_historical_data(directory):
                 with open(os.path.join(directory, filename), 'r', encoding='utf-8') as f:
                     text = f.read()
                     
-                # Gunakan preprocessor sederhana di sini atau import jika perlu
-                # Kita asumsikan text bersih cukup untuk VADER
                 score = get_vader_score(text)
+                
+                # Fetch Market Data (S&P 500: ^GSPC)
+                # Ambil data H sampai H+5 untuk handle weekend/holiday (ambil first trading day)
+                start_date = date_obj
+                end_date = date_obj + timedelta(days=5)
+                
+                ticker = yf.Ticker("^GSPC")
+                hist = ticker.history(start=start_date, end=end_date)
+                
+                market_change = None
+                
+                if not hist.empty:
+                    # Ambil hari pertama yang tersedia (bisa hari H atau besoknya jika libur)
+                    row = hist.iloc[0]
+                    # Hitung % Change: (Close - Open) / Open
+                    market_change = ((row['Close'] - row['Open']) / row['Open']) * 100
                 
                 historical_data.append({
                     'date': date_obj,
                     'compound': score['compound'],
+                    'market_change': market_change,
                     'filename': filename
                 })
             except Exception as e:
@@ -285,6 +349,52 @@ def analyze_historical_data(directory):
     # Sort by date
     historical_data.sort(key=lambda x: x['date'])
     return historical_data
+
+def calculate_market_correlation(historical_data):
+    """
+    Menghitung korelasi Pearson antara Sentimen dan Perubahan Pasar.
+    """
+    from scipy import stats
+    import numpy as np
+    
+    # Filter data valid (yang punya market_change)
+    valid_data = [d for d in historical_data if d['market_change'] is not None]
+    
+    if len(valid_data) < 2:
+        return {'correlation': 0.0, 'p_value': 1.0, 'narrative': 'Data tidak cukup.'}
+        
+    sentiments = [d['compound'] for d in valid_data]
+    market_changes = [d['market_change'] for d in valid_data]
+    
+    corr_coef, p_value = stats.pearsonr(sentiments, market_changes)
+    
+    # Interpretasi
+    if abs(corr_coef) < 0.3:
+        strength = "Sangat Lemah"
+    elif abs(corr_coef) < 0.5:
+        strength = "Lemah"
+    elif abs(corr_coef) < 0.7:
+        strength = "Sedang"
+    else:
+        strength = "Kuat"
+        
+    direction = "Positif" if corr_coef > 0 else "Negatif"
+    
+    narrative = (
+        f"Korelasi {direction} {strength} ({corr_coef:.4f}). "
+        f"P-Value: {p_value:.4f}. "
+    )
+    
+    if p_value < 0.05:
+        narrative += "Hubungan ini Signifikan secara statistik."
+    else:
+        narrative += "Hubungan ini TIDAK Signifikan secara statistik (mungkin kebetulan)."
+        
+    return {
+        'correlation': corr_coef,
+        'p_value': p_value,
+        'text': narrative
+    }
 
 def extract_key_highlights(opening_text, qa_text, num=3):
     """
@@ -563,3 +673,146 @@ def analyze_keyword_context(text, keyword):
             })
             
     return results
+
+def perform_statistical_test(opening_sentences, qa_sentences):
+    """
+    Melakukan uji statistik (Independent T-Test) untuk membandingkan
+    rata-rata sentimen antara Opening Speech dan Q&A Session.
+    
+    Args:
+        opening_sentences (list): List of dict hasil get_sentence_scores untuk Opening.
+        qa_sentences (list): List of dict hasil get_sentence_scores untuk Q&A.
+        
+    Returns:
+        dict: {
+            't_stat': float,
+            'p_value': float,
+            'is_significant': bool,
+            'narrative': str
+        }
+    """
+    # Extract compound scores
+    opening_scores = [item['compound'] for item in opening_sentences]
+    qa_scores = [item['compound'] for item in qa_sentences]
+    
+    # Calculate means (for narrative)
+    mean_opening = np.mean(opening_scores) if opening_scores else 0
+    mean_qa = np.mean(qa_scores) if qa_scores else 0
+    
+    # Check sufficiency of data
+    if len(opening_scores) < 2 or len(qa_scores) < 2:
+        return {
+            't_stat': 0.0,
+            'p_value': 1.0,
+            'is_significant': False,
+            'narrative': "Data tidak cukup untuk melakukan uji statistik yang valid."
+        }
+        
+    # Perform Independent T-Test (Two-sided)
+    # equal_var=False (Welch's t-test) karena varians mungkin berbeda
+    t_stat, p_value = stats.ttest_ind(opening_scores, qa_scores, equal_var=False)
+    
+    is_significant = p_value < 0.05
+    
+    if is_significant:
+        significance_text = "SIGNIFIKAN secara statistik"
+        if mean_qa > mean_opening:
+            direction = "lebih positif"
+        else:
+            direction = "lebih negatif"
+        narrative = (
+            f"Terdapat perbedaan yang {significance_text} (p-value: {p_value:.4f} < 0.05) "
+            f"antara sentimen Opening dan Q&A. "
+            f"Sesi Q&A secara signifikan {direction} dibandingkan Opening."
+        )
+    else:
+        significance_text = "TIDAK SIGNIFIKAN secara statistik"
+        narrative = (
+            f"Perbedaan sentimen antara Opening dan Q&A {significance_text} (p-value: {p_value:.4f} >= 0.05). "
+            "Setiap perbedaan rata-rata yang terlihat kemungkinan hanya kebetulan (variasi acak)."
+        )
+        
+    return {
+        't_stat': t_stat,
+        'p_value': p_value,
+        'is_significant': is_significant,
+        'narrative': narrative
+    }
+
+def perform_topic_clustering(text, n_clusters=5):
+    """
+    Melakukan Unsupervised Learning (K-Means) untuk mengelompokkan kalimat
+    berdasarkan topik secara otomatis.
+    
+    Args:
+        text (str): Teks lengkap (Opening + Q&A).
+        n_clusters (int): Jumlah cluster yang diinginkan.
+        
+    Returns:
+        list: List of dict [{'cluster_id': int, 'label': str, 'sentences': list, 'avg_sentiment': float}]
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.cluster import KMeans
+    import nltk
+    from nltk.tokenize import sent_tokenize
+    import numpy as np
+    
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download('punkt')
+        
+    # 1. Split Sentences
+    sentences = sent_tokenize(text)
+    # Filter short sentences
+    valid_sentences = [s for s in sentences if len(s.split()) > 5]
+    
+    if len(valid_sentences) < n_clusters * 2:
+        return [] # Not enough data
+        
+    # 2. Vectorization (TF-IDF)
+    # Gunakan stop_words english dan max_df untuk membuang kata umum
+    vectorizer = TfidfVectorizer(stop_words='english', max_df=0.8, min_df=2)
+    try:
+        tfidf_matrix = vectorizer.fit_transform(valid_sentences)
+    except ValueError:
+        return [] # Vocabulary empty?
+        
+    # 3. K-Means Clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    kmeans.fit(tfidf_matrix)
+    
+    # 4. Extract Top Terms per Cluster & Calculate Sentiment
+    feature_names = vectorizer.get_feature_names_out()
+    cluster_results = []
+    
+    for i in range(n_clusters):
+        # Get sentences in this cluster
+        # Find indices where label == i
+        indices = np.where(kmeans.labels_ == i)[0]
+        cluster_sentences = [valid_sentences[idx] for idx in indices]
+        
+        # Calculate Average Sentiment
+        sentiment_scores = [get_vader_score(s)['compound'] for s in cluster_sentences]
+        avg_score = np.mean(sentiment_scores) if sentiment_scores else 0.0
+        
+        # Get Top Terms individually from centroid
+        centroid = kmeans.cluster_centers_[i]
+        top_indices = centroid.argsort()[-3:][::-1] # Top 3
+        top_terms = [feature_names[ind] for ind in top_indices]
+        
+        # Label: Capitalize terms
+        label = ", ".join([t.title() for t in top_terms])
+        
+        cluster_results.append({
+            'cluster_id': i,
+            'label': label,
+            'count': len(cluster_sentences),
+            'avg_sentiment': avg_score,
+            'top_terms': top_terms
+        })
+        
+    # Sort results by avg_sentiment for better visualization
+    cluster_results.sort(key=lambda x: x['avg_sentiment'], reverse=True)
+        
+    return cluster_results
